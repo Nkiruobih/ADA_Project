@@ -1,0 +1,69 @@
+---
+title: "ADA Project- Weapon carrying and victims of bullying"
+author: "Nkiru Obi"
+date: "11/3/2021"
+output: html_document
+---
+
+```{r}
+library(haven)
+library(tidyverse)
+library(survey)
+
+#Read in data
+yrbs_2019 <- read.spss(
+    "C:/Users/nkiru/Documents/NKYRUH/Advanced Data Analysis/Git_ADA_Project/yrbs2019.sav", to.data.frame=TRUE)
+```
+
+```{r}
+#Select variables of interest into smaller dataframe called yrbss and rename variables.
+yrbss <- yrbs_2019 %>%
+  select(Q1, Q2, Q3, Q66, Q23, Q13) %>%
+  rename(age = Q1, sex= Q2, grade= Q3, sexual_identity= Q66, bully_victim= Q23, weapon_carrying= Q13)
+
+#check data
+yrbss
+
+#check the class of the variables
+sapply(yrbss, class)
+```
+
+```{r}
+#recode age variable and change class to numeric
+
+ yrbss$age<- recode(yrbss$age, '12 years old or younger' = 12,
+                                         '13 years old' = 13,
+                                         '14 years old' = 14,
+                                         '15 years old' = 15,
+                                         '16 years old' = 16,
+                                         '17 years old' = 17,
+                                         '18 years old or older' = 18) 
+
+class(yrbss$age)
+
+#recode sexual identity
+yrbss$sexual_identity<- recode(yrbss$sexual_identity, 'Not sure' = 'questioning')
+
+table(yrbss$sexual_identity)
+
+yrbss1 <- yrbss %>%
+  drop_na(age, sex, sexual_identity, grade, bully_victim, weapon_carrying) %>%
+  mutate(age= recode(age, '12 years old or younger' = 12,
+                                         '13 years old' = 13,
+                                         '14 years old' = 14,
+                                         '15 years old' = 15,
+                                         '16 years old' = 16,
+                                         '17 years old' = 17,
+                                         '18 years old or older' = 18)) %>%
+  mutate(sexual_identity= recode(sexual_identity, 'Not sure' = 'questioning')) %>%
+  if_els
+  yrbss1$weapon_carrying <- if_else(weapon_carrying== '0 days', 'no weapon carrying', 'carried weapon')
+
+
+rlang::last_error()
+```
+
+```{r}
+
+```
+
