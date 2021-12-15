@@ -2,68 +2,339 @@
 title: "ADA Project- Weapon carrying and victims of bullying"
 author: "Nkiru Obi"
 date: "11/3/2021"
-output: html_document
+output:
+  html_document: default
+  word_document: default
 ---
 
-```{r}
-library(haven)
-library(tidyverse)
-library(survey)
+I used Youth Risk Behavioral Surveillance (YRBS) 2019 data compiled by the CDC. 
+
+# Data source: 
+* https://www.cdc.gov/healthyyouth/data/yrbs/files/2019/XXH2019_YRBS_Data.dat
+
+# Sample characteristics        
+* collected in 2019. 
+* sample size= 13677. 
+* 6 variables: all factor variables
+    
+  
+# Research question
+* HOW DID WEAPON CARRYING IN SCHOOL DIFFER BETWEEN BULLIED AND NONBULLIED HIGH SCHOOL STUDENTS IN THE UNITED STATES IN 2019. 
+
+# Logistic regression purpose 
+
+* Logistic regression was used to predict the probability of the outcome variable, weapon  carrying to school.
+* In this case, we are determining whether the predictor variable- victimization  help predict weapon carrying to school.
+* The outcome variable, weapon carrying, is a categorical variable recoded with 2 categories (binary variable): did not carry weapon (0) and carried weapon (1). 
+* Because outcome is binary, the model predicts probability of being in one of the two categories.
+* I would be adjusting for age, sex, grade, and sexual identity as confounders as identified by Directed Acyclic Graph (DAG).
+
+## Codebook:
+* Q1= age-  factor variable with 5 levels (12 years old or younger, 13 years old, 14 years old, 15 years old, 16 years old, 17 years old, 18 years old and older).This is recoded as 12, 13, 14, 15, 16, 17, and 18 respectively.
+* Q2 = sex- factor variable with 2 levels (female and male).
+* Q3 = grade- factor variable with 5 categories (9th grade, 10th grade, 11th grade, 12th grade, ungraded or other grade).The ungraded or other grade category is recoded as missing (NA).
+* Q13 = Weapon carrying to school in the past 30 days - factor variable with 5 levels (0 days, 1 day, 2 or 3 days, 4 or 5 days, 6 or more days).
+* Q23 = bullied on school property in the pas 30 days- factor variable with 2 levels (Yes, No).
+* Q66 = sexual orientation- factor variable with 4 categories (Heterosexual, Gay or Lesbian, Bisexual, and Not sure).
+
+```{r,message=FALSE, warning=FALSE}
+#Load packages
+pacman::p_load(tidyverse, foreign, haven, survey, ROCR, odds.n.ends, blorr, lmtest, car) 
 
 #Read in data
 yrbs_2019 <- read.spss(
-    "C:/Users/nkiru/Documents/NKYRUH/Advanced Data Analysis/Git_ADA_Project/yrbs2019.sav", to.data.frame=TRUE)
+    "C:/Users/nkiru/Documents/NKYRUH/Advanced Data Analysis/Git_ADA_Project/yrbs2019.sav", to.data.frame = TRUE)
 ```
 
-```{r}
+```{r,message=FALSE, warning=FALSE}
 #Select variables of interest into smaller dataframe called yrbss and rename variables.
 yrbss <- yrbs_2019 %>%
-  select(Q1, Q2, Q3, Q66, Q23, Q13) %>%
+  select(Q1, Q2, Q3, Q66, Q23, Q13, weight, stratum, psu) %>%
   rename(age = Q1, sex= Q2, grade= Q3, sexual_identity= Q66, bully_victim= Q23, weapon_carrying= Q13)
 
 #check data
-yrbss
+summary(yrbss)
 
 #check the class of the variables
 sapply(yrbss, class)
+
 ```
 
-```{r}
-#recode age variable and change class to numeric
+```{r, message=FALSE, warning=FALSE}
+#recode weapon carrying into 2 levels and rename them
+yrbss$weapon_carrying <- if_else(yrbss$weapon_carrying== '0 days', 0, 1)
+yrbss$weapon_carrying <- factor(yrbss$weapon_carrying, levels = c(0,1), labels = c('did not carry weapon', 'carried weapon'))
+table(yrbss$weapon_carrying, useNA = "ifany")
 
- yrbss$age<- recode(yrbss$age, '12 years old or younger' = 12,
-                                         '13 years old' = 13,
-                                         '14 years old' = 14,
-                                         '15 years old' = 15,
-                                         '16 years old' = 16,
-                                         '17 years old' = 17,
-                                         '18 years old or older' = 18) 
+#relevel bully_victim
+yrbss$bully_victim <- if_else(yrbss$bully_victim== 'No', 0, 1)
+yrbss$bully_victim <- factor(yrbss$bully_victim, levels = c(0,1), labels = c('No', 'Yes'))
 
-class(yrbss$age)
+#change age and sexual identity to character variables
+yrbss$age = as.character(yrbss$age)
+yrbss$sexual_identity = as.character(yrbss$sexual_identity)
 
-#recode sexual identity
-yrbss$sexual_identity<- recode(yrbss$sexual_identity, 'Not sure' = 'questioning')
-
-table(yrbss$sexual_identity)
-
+#Some data cleaning and drop missing values
 yrbss1 <- yrbss %>%
-  drop_na(age, sex, sexual_identity, grade, bully_victim, weapon_carrying) %>%
-  mutate(age= recode(age, '12 years old or younger' = 12,
-                                         '13 years old' = 13,
-                                         '14 years old' = 14,
-                                         '15 years old' = 15,
-                                         '16 years old' = 16,
-                                         '17 years old' = 17,
-                                         '18 years old or older' = 18)) %>%
-  mutate(sexual_identity= recode(sexual_identity, 'Not sure' = 'questioning')) %>%
-  if_els
-  yrbss1$weapon_carrying <- if_else(weapon_carrying== '0 days', 'no weapon carrying', 'carried weapon')
+  mutate(age= parse_number(age)) %>%
+  mutate(grade= na_if(x= grade, y= 'Ungraded or other grade')) %>%
+  mutate(grade= droplevels(x= grade)) %>%
+  mutate(sexual_identity= case_when(sexual_identity== 'Not sure'~ 'questioning', TRUE ~ as.character(sexual_identity))) %>%
+  mutate(sexual_identity= as.factor(sexual_identity)) %>%
+  mutate(weapon_carrying= as.factor(weapon_carrying)) %>%
+  drop_na()
 
+#check the class of the variables
+sapply(yrbss1, class)
 
-rlang::last_error()
+# Check dataset
+summary(object = yrbss1)
+
+#Look at the rate of missingness
+missingRate <- 1- nrow(yrbss1)/nrow(yrbss)
+missingRate
 ```
 
-```{r}
+From the calculation of the rate of missingness, 12.8% (1756) of our cases have missing values on one or more of our variables and were excluded.
+
+```{r, message=FALSE, warning=FALSE}
+#Weighted prevalence of victimization and weapon carrying in the sample
+yrbsDesign <- svydesign(id=~psu, weight=~weight,
+strata=~stratum,data=yrbss1, nest=TRUE)
+
+svymean(~age + sex + grade+ sexual_identity + bully_victim + weapon_carrying, yrbsDesign)
+
+```
+From the weighted results above, the prevalence of victimization in the sample is 18.9% while the prevalence of weapon carrying to school is 2.3%. 
+
+## Figure 1: Graphs of all variables
+```{r, message=FALSE, warning=FALSE}
+# make graphs of variables
+# 1) Weapon carrying
+yrbss1 %>%
+  ggplot(aes(x = weapon_carrying)) +
+  geom_bar() +
+  labs(x = "weapon_carrying", y = "Number of observations",
+       title = "Frequency of weapon carrying in US high schools (YRBS 2019)") +
+  theme_minimal()
+
+# 2) Age
+yrbss1 %>%
+  ggplot(aes(x = age)) +
+  geom_bar() +
+  labs(x = "age", y = "Number of observations",
+       title = "Age distribution in US high schools (YRBS 2019)") +
+  scale_fill_brewer(palette = "Pastel2", guide = FALSE) +
+  theme_minimal()
+
+# 3) Sex
+yrbss1 %>%
+  ggplot(aes(x = sex, fill= sex)) +
+  geom_bar() +
+  labs(x = "sex", y = "Number of observations") +
+  scale_fill_brewer(palette = "Pastel2", guide = FALSE) +
+  theme_minimal()
+
+# 4) Grade
+yrbss1 %>%
+  ggplot(aes(x = grade, fill = grade)) +
+  geom_bar() +
+  labs(x = "grade", y = "Number of observations") +
+  scale_fill_brewer(palette = "Paired", guide = FALSE) +
+  theme_minimal()
+
+# 5) Sexual identity
+yrbss1 %>%
+  ggplot(aes(x = sexual_identity, fill = sexual_identity)) +
+  geom_bar() +
+  labs(x = "sexual identity", y = "Number of observations") +
+  scale_fill_brewer(palette = "Paired", guide = FALSE) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# 6) Bully_victim
+yrbss1 %>%
+  ggplot(aes(x = bully_victim, fill = bully_victim)) +
+  geom_bar() +
+  labs(x = "Victims of bullying", y = "Number of observations") +
+  scale_fill_brewer(palette = "Paired", guide = FALSE) +
+  theme_minimal()
+
 
 ```
 
+
+## Table 1: Characteristics of participants
+```{r, message=FALSE, warning=FALSE}
+library(package= "tableone")
+summary.table <- CreateTableOne(data = yrbss1)
+print(summary.table, showAllLevels = TRUE)
+
+```
+
+
+
+## Figure 2: Graph showing the prevalence of weapon carrying.
+```{r, message=FALSE, warning=FALSE}
+#Examine if there are differences in weapon carrying by bullying victim status
+yrbss1 %>%
+  group_by(weapon_carrying, bully_victim) %>%
+  count() %>%
+  group_by(bully_victim) %>%
+  mutate(percent= 100* (n/sum(n))) %>%
+  ggplot(aes(x=  bully_victim, y= percent, fill = weapon_carrying)) +
+  geom_bar(position = "dodge", stat = "identity") +
+  labs(x = "Victims of bullying", y = "percentage observations",
+       title = "Prevalence of weapon carrying (YRBS 2019)") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Paired", name = "weapon carrying in the past 30 days") +
+  theme(axis.text.x = element_text(hjust = 1))
+```
+
+## Table 2: Descriptive statistics of variables by weapon carrying
+```{r, message=FALSE, warning=FALSE}
+#create table of descriptive statistics by weapon carrying status.
+library(package= "tableone")
+
+Descriptive <- CreateTableOne(data = yrbss1,
+                            strata = 'weapon_carrying',
+                            vars = c('age', 'sex', 'grade', 'sexual_identity', 'bully_victim'))
+print(Descriptive, showAllLevels = TRUE,
+      nonnormal = c('age'))
+```
+
+## Logistic model for victim of bullying
+```{r, message=FALSE, warning=FALSE}
+table(yrbss1$weapon_carrying, yrbss1$bully_victim)
+
+#check levels
+levels(yrbss1$weapon_carrying)
+levels(yrbss1$bully_victim)
+
+#logistic model with bully_victim as a predictor
+victimModel <- glm(weapon_carrying ~ bully_victim , data=yrbss1, family="binomial")
+summary(victimModel)
+
+
+#calculate and print ORs and 95% CIs  
+ORbully_victim <-exp(cbind(OR = coef(victimModel), confint(victimModel))) 
+ORbully_victim 
+
+odds.n.ends(victimModel)
+```
+
+From our model above, those who were victims of bullying had 2.85 times greater odds of carrying weapons to school than those who were not bullied.This was statistically significant [OR= 2.85, CI: 2.24,3.61]. This model correctly predicted 97.55% of our observations. However, model sensitivity was low at 0. This may be due to the small number of observations with weapon carrying compared to the total observations in the dataset.Specificity was 100%, the model was good at predicting those who did not carry weapons.
+
+##Test assumptions of Independence of observations and influence
+
+*Independence of observations*
+The survey uses a 3-stage cluster sampling method to select students from a class to interview. It is likely that students in a class may be similar and so, observations may not be completely independent.
+
+*Influence*
+```{r, message=FALSE, warning=FALSE}
+#influence plot - Cook's D plot-identifies observation number in parent dataset
+plot(victimModel, which=4, id.n=5, col="blue")
+```
+
+*Model Fits*
+```{r, message=FALSE, warning=FALSE}
+#Various pseudo R squares, log likelihood, deviance, AIC, BIC
+blr_model_fit_stats(victimModel)
+
+#Hosmer lemeshow goodness of fit test: a significant p value indicates a bad fit
+blr_test_hosmer_lemeshow(victimModel)
+```
+The Hosmer & lemeshow goodness of fit test has a non-significant p-value (1.000) indicating that our model is a good fit.
+
+
+## Multivariable model with weapon carrying as the dependent variable and age, sex, grade, and sexual identity as the independent variables
+```{r, message=FALSE, warning=FALSE}
+#relevel sexual identity to make Heterosexual the refernce level
+levels(yrbss1$sexual_identity)
+yrbss1$sexual_identity <- relevel(yrbss1$sexual_identity, ref = 'Heterosexual (straight)')
+
+#Logistic model with confounders
+confModel <- glm(weapon_carrying ~ bully_victim + age + sex + grade + sexual_identity, data=yrbss1, family="binomial")
+summary(confModel)
+
+#calculate and print ORs and 95% CIs  
+ORconfModel<-exp(cbind(OR = coef(confModel), confint(confModel))) 
+ORconfModel 
+
+odds.n.ends(confModel)
+```
+
+##Interpretation of model
+After adjusting for age, sex, grade and sexual identity, those who were bullied had 3.06 times greater odds of carrying weapons to school than those who were not bullied. This was statistically significant [OR= 3.06, CI: 2.38,3.91]. This model correctly predicted 97.55% of our observations. However, model sensitivity was low at 0.3%. This may be due to the small number of observations with weapon carrying compared to the total observations in the dataset. Model specificity was 99.99%- my model was better at predicting those who did not carry weapons than those who carried weapons. 
+For every year increase in age between age 12 and 18 years, the odds of weapon carrying decreased by 22% after adjusting for victimization status, sex, grade, sexual identity. this was statistically significant (OR= 0.78, CI: 0.66- 0.92).
+The odds of carrying weapon was 3.36 times higher in males compared to the odds of weapon carrying in females after adjusting for victimization status, age, sex, grade, and sexual identity.this was statistically significant (OR= 3.36, CI: 2.58- 4.42).
+The odds of carrying weapon was 2.06 times higher in 10th graders compared to the odds of weapon carrying in 9th graders after adjusting for victimization status, age, sex, and sexual identity.this was statistically significant (OR= 2.06, CI: 1.41- 3.05).
+The odds of carrying weapon was 3.1 times higher in 11th graders compared to the odds of weapon carrying in 9th graders after adjusting for victimization status, age, sex, and sexual identity.this was statistically significant (OR= 3.1, CI: 1.92- 5.03).
+The odds of carrying weapon was 3.21 times higher in 12th graders compared to the odds of weapon carrying in 9th graders after adjusting for victimization status, age, sex, and sexual identity.this was statistically significant (OR= 3.21, CI: 1.72- 5.94).
+The odds of carrying weapon was 2.34 times higher in bisexuals compared to the odds of weapon carrying in heterosexuals after adjusting for victimization status, age, sex, and grade.this was statistically significant (OR= 2.34, CI: 1.60- 3.37).
+The odds of carrying weapon was 1.995 times higher in gays/lesbians compared to the odds of weapon carrying in heterosexuals after adjusting for victimization status, age, sex, and grade.this was statistically significant (OR= 1.995, CI: 1.08- 3.4).
+The odds of carrying weapon was 3.64 times higher in students questioning sexuality compared to the odds of weapon carrying in heterosexuals after adjusting for victimization status, age, sex, and grade.this was statistically significant (OR= 3.64, CI: 2.41- 5.34).
+
+##  Look at assumptions of linearity, multicollinearity and influence
+*Linearity*
+```{r, message=FALSE, warning=FALSE}
+#linearity
+yrbss1 <- yrbss1 %>%
+  mutate(age.logAge = age * log(age)) #create term to test linearity
+
+boxTidwellAge <- glm(weapon_carrying ~ bully_victim + age + age.logAge + sex + grade + sexual_identity, data=yrbss1, family="binomial") 
+
+summary(boxTidwellAge)
+```
+The interaction term has a significant p value (p < 0) indicating that the linearity assumption has been violated. I will use age as is, due to the narrow range of values for age (12- 18 years). This is a limitation of my analysis.
+
+*Multicollinearity*
+```{r, message=FALSE, warning=FALSE}
+#Variance Inflation Factors
+vif(confModel)
+```
+VIF are all less than 2 indicating that there is no multicollinearity between the variables
+
+*Influence*
+```{r, message=FALSE, warning=FALSE}
+#Cook's D plot
+plot(confModel, which=4, id.n=5, col="red")
+
+#Set Cook's D cutoff=0.013
+cutoff <- 0.013
+
+#Identify observations with a Cook's Distance greater than cutoff
+obs_no <- as.data.frame(cooks.distance(confModel)) %>%
+  mutate(obs_no=row_number()) %>%
+  filter(`cooks.distance(confModel)` > cutoff)
+
+#Exclude the values shown in the Cook's D plot, and see how the models compare.
+confModel.modex <- update(confModel,subset=c(-obs_no$obs_no))
+summary(confModel.modex)
+
+outliers <- yrbss1[obs_no$obs_no,]
+
+#compare coefficients between models with and without influential observations, #caveat model number of observations is not the same
+compareCoefs(confModel, confModel.modex)
+```
+
+From the comparison results above, we can conclude that removing influential data does not largely affect the coefficient of my main exposure- bully victim (1.12 vs. 1.13).
+
+## Model fit of the full model
+```{r, message=FALSE, warning=FALSE}
+#Various pseudo R squares, log likelihood, deviance, AIC, BIC
+blr_model_fit_stats(confModel)
+
+#Hosmer lemeshow goodness of fit test: a significant p value indicates a bad fit
+blr_test_hosmer_lemeshow(confModel)
+```
+In the Hosmer & lemeshow goodness of fit test, the expected and observed frequencies match closely and the test has a non-significant p-value (0.0666) indicating that our model is a good fit.
+
+
+## Full model vs. reduced model
+```{r, message=FALSE, warning=FALSE}
+#likelihood ratio test: compare two nested models
+lrtest(victimModel, confModel)
+```
+
+The absolute values of log likelihood of the model with bully_victim and confounders (-1268.4) is larger than the bully_victim only model (-1338.0). Based on the significant p value from LR test, we can conclude that the model with bully_victim and confounders is better than the model with bully_victims only.
