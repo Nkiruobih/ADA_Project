@@ -39,7 +39,7 @@ I used Youth Risk Behavioral Surveillance (YRBS) 2019 data compiled by the CDC.
 
 ```{r,message=FALSE, warning=FALSE}
 #Load packages
-pacman::p_load(tidyverse, foreign, haven, survey, ROCR, odds.n.ends, blorr, lmtest, car) 
+pacman::p_load(tidyverse, foreign, haven, survey, ROCR, odds.n.ends, blorr, lmtest, car, multcom) 
 
 #Read in data
 yrbs_2019 <- read.spss(
@@ -168,7 +168,7 @@ yrbss1 %>%
 ```{r, message=FALSE, warning=FALSE}
 library(package= "tableone")
 summary.table <- CreateTableOne(data = yrbss1)
-print(summary.table, showAllLevels = TRUE)
+print(summary.table, showAllLevels = TRUE, nonnormal = c('age'))
 
 ```
 
@@ -264,7 +264,7 @@ ORconfModel
 odds.n.ends(confModel)
 ```
 
-##Interpretation of model
+##Interpretation of model:
 After adjusting for age, sex, grade and sexual identity, those who were bullied had 3.06 times greater odds of carrying weapons to school than those who were not bullied. This was statistically significant [OR= 3.06, CI: 2.38,3.91]. This model correctly predicted 97.55% of our observations. However, model sensitivity was low at 0.3%. This may be due to the small number of observations with weapon carrying compared to the total observations in the dataset. Model specificity was 99.99%- my model was better at predicting those who did not carry weapons than those who carried weapons. 
 For every year increase in age between age 12 and 18 years, the odds of weapon carrying decreased by 22% after adjusting for victimization status, sex, grade, sexual identity. this was statistically significant (OR= 0.78, CI: 0.66- 0.92).
 The odds of carrying weapon was 3.36 times higher in males compared to the odds of weapon carrying in females after adjusting for victimization status, age, sex, grade, and sexual identity.this was statistically significant (OR= 3.36, CI: 2.58- 4.42).
@@ -338,3 +338,46 @@ lrtest(victimModel, confModel)
 ```
 
 The absolute values of log likelihood of the model with bully_victim and confounders (-1268.4) is larger than the bully_victim only model (-1338.0). Based on the significant p value from LR test, we can conclude that the model with bully_victim and confounders is better than the model with bully_victims only.
+
+
+
+# AGE AS A MODIFIER OF THE ASSOCIATION BETWEEN BULLYING AND WEAPON CARRYING
+H0: bullying equally predicts weapon carrying regardless of age.
+
+```{r}
+#View the age variable
+table(yrbss1$age)
+
+#Recode the age variable into 2 categories (age_cat) and make it a factor variable
+yrbsAgeRec <- yrbss1 %>%
+  mutate(age_cat= as.factor(case_when(age %in% c(12, 13, 14, 15) ~ "15 years and younger",
+                      age %in% c(16, 17, 18) ~ "16 years and older")))
+table(yrbsAgeRec$age_cat)
+class(yrbsAgeRec$age_cat)
+sapply(yrbsAgeRec, class)
+
+#Determine if age modifies the association between bullying and weapon carrying
+#a) run a logistic model
+ageCatMod <- glm(weapon_carrying ~ bully_victim + age_cat, data=yrbsAgeRec, family="binomial")
+summary(ageCatMod)
+
+ageCat_IntMod <- glm(weapon_carrying ~ bully_victim + age_cat + bully_victim*age_cat, data=yrbsAgeRec, family="binomial")
+summary(ageCat_IntMod)
+exp(coef(ageCat_IntMod))
+
+#Test the hypothesis with the lrtest
+lrtest(ageCatMod, ageCat_IntMod)
+
+```
+There is significant effect modification (p for interaction term= 0.045) of the odds ratio for the association between weapon carrying and bully victimization by age.
+
+Odds ratio for 16 years and older = 1.1
+Odds ratio for 15 years and younger = 
+The likelihood ratio test indicates that the model that includes the interaction term significantly improves fit compared to the model with just age_cat (p=0.044).
+
+```{r}
+#age as a modifier: 15 years and younger
+YoungerMod <-glm(weapon_carrying ~ bully_victim + age_cat, data= yrbsAgeRec[which(yrbsAgeRec$age_cat=="15 years and younger"), ], family="binomial")
+summary(YoungerMod)
+```
+
